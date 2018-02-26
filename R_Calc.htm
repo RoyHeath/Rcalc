@@ -1,0 +1,779 @@
+<!DOCTYPE HTML>
+<HTML><HEAD><TITLE>Roy Heath - Reliability Calculator</TITLE>
+<SCRIPT application/javascript>
+<!-- SCRIPT language=JavaScript> old obsolete replaced by above --->
+
+<!-- hide this script tag's contents from old browsers --->
+
+// This Reliability Calculator will compute Network Reliability as a
+// function of four input parameters: Total Components (n), Working
+// Components (r), Total Time (t) and Individual Failure Rate (lambda).
+// This function is described in the literature as "An r-OUT-OF-n
+// structure".  n identical parallel components of a network in which
+// r of them must work for the total time, given the items' failure
+// rate.  Refer to Shooman, M. Reliability of Computer Systems and
+// Networks, Wiley, New York, 2002.
+//
+// Solvers have been incorporated into this Reliability Calculator so
+// that given a target Network Reliability, and an initial estimate value,
+// the solvers will take the remaining parameters and compute (or solve
+// for) the desired parameter.
+//
+// The solver will stop and display the current solution if the
+// convergence test is not satisfied after <iterations_limit> iterations.
+// The resulting value can be adjusted and restarted until an acceptable
+// result is produced.
+
+////////////////////////////////////////////////////////////////////////////
+// The following are one-line descriptions of functions.
+////////////////////////////////////////////////////////////////////////////
+// initialize                   - called as the file is being loaded into
+//                                browser.
+// validate                     - verify that input parameters can return a
+//                                result
+// clear_all                    - button input to "Reset"
+// getChoice                    - form input from pull-down menu
+// f_p_of_x                     - The derivative of f_of_x wrt time
+// f_of_x                       - The function on which this Network
+//                                reliability calculator is based
+// n_choose_k                   - (N!)/((N-K)!K!)
+// solve_for_lambda             - Newtons method applied to f_of_x and
+//                                f_p_of_x with time and lambda switched
+// solve_for_time               - Newtons method applied to f_of_x and f_p_of_x
+// solve_for_total_components   - iterating through valid values of n to find
+//                                the n that computes a reliability that is
+//                                between the target and unity.
+// solve_for_working_components - iterating through valid values for m to
+//                                find the m that computes a reliability that
+//                                is between the target and unity.
+// solve_for_n_m                - iterating through valid values of n & m
+//                                to find the n & m pair that computes a
+//                                reliability that is between the target
+//                                reliability and unity.
+// process_inputs               - button input to "Solve"
+////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////
+// Global variable used in the solvers.  All solvers currently use the
+// same constraints.  Constraints can be tailored to solvers if need be
+////////////////////////////////////////////////////////////////////////////
+
+   var max_n = 15;
+
+////////////////////////////////////////////////////////////////////////////
+// initialize will be called when the file is loaded into the browser.  It
+// was created to permit users to change certain parameters.  If an input
+// field that contains "type=hidden" is changed to "type=text", a box will
+// be displayed with the default value, and it will be changeable.  This
+// may be useful under certain circumstances.
+//
+// f_tolerance        - is for the convergence test to compare the computed
+//                      value with the target
+// x_tolerance        - is for the convergence test to compare the change in
+//                      the variable that is being solved for from one
+//                      iteration to the next.
+// printing_precision - is for the printing precision ... rather than the
+//                      dafault of 16.
+// iterations_limit   - is to control the number of iterations before the
+//                      solver quits and returns the best answer so far.
+////////////////////////////////////////////////////////////////////////////
+
+function initialize() {
+   document.UserInfo.f_tolerance.value        = 0.000002;
+   document.UserInfo.x_tolerance.value        = 0.0002;
+   document.UserInfo.printing_precision.value = 6;
+   document.UserInfo.iterations_limit.value   = 200;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// validate will be called after the Solve button is clicked
+// after a variable had been selected to be solved for.  This
+// function has checks to make sure that user input parameters
+// are within a reasonable range of values.
+////////////////////////////////////////////////////////////////////////////
+
+function validate () {
+   var valid = true;
+   var pleaseText = "Please Re-enter your ";
+   switch (document.UserInfo.Unknown.selectedIndex) {
+      case 1: { // solve for Network Reliability
+         if ((parseInt (document.UserInfo.Total_Components.value) <= 0) ||
+             (parseInt (document.UserInfo.Total_Components.value) > max_n)) {
+            valid = false;
+            alert (pleaseText + "Total Components !");
+            document.UserInfo.Total_Components.value = "0";
+         }
+         if ((parseInt (document.UserInfo.Working_Components.value) <= 0) ||
+             (parseInt (document.UserInfo.Working_Components.value) > max_n)) {
+            valid = false;
+            alert (pleaseText + "Working Components !");
+            document.UserInfo.Working_Components.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Time.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Total Time !");
+            document.UserInfo.Total_Time.value = "0";
+         }
+         if (parseFloat
+                (document.UserInfo.Individual_Failure_Rate.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Individual Failure Rate !");
+            document.UserInfo.Individual_Failure_Rate.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Components.value) <
+             parseInt (document.UserInfo.Working_Components.value)) {
+            valid = false;
+            alert
+               ("Total_Components must not be less than Working_Components");
+            document.UserInfo.Total_Components.value = "0";
+            document.UserInfo.Working_Components.value = "0";
+         }
+         break;
+      } case 2: { // Solve for Total Components
+         if (parseFloat (document.UserInfo.Network_Reliability.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Network Reliability !");
+            document.UserInfo.Network_Reliability.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Time.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Total Time !");
+            document.UserInfo.Total_Time.value = "0";
+         }
+         if (parseFloat
+                (document.UserInfo.Individual_Failure_Rate.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Individual Failure Rate !");
+            document.UserInfo.Individual_Failure_Rate.value = "0";
+         }
+         break;
+      } case 3: { // Solve for Working Components
+         if (parseFloat (document.UserInfo.Network_Reliability.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Network Reliability !");
+            document.UserInfo.Network_Reliability.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Time.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Total Time !");
+            document.UserInfo.Total_Time.value = "0";
+         }
+         if (parseFloat
+                (document.UserInfo.Individual_Failure_Rate.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Individual Failure Rate !");
+            document.UserInfo.Individual_Failure_Rate.value = "0";
+         }
+         break;
+      } case 4: { // Solve for Total & Working Components
+         if (parseFloat (document.UserInfo.Network_Reliability.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Network Reliability !");
+            document.UserInfo.Network_Reliability.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Time.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Total Time !");
+            document.UserInfo.Total_Time.value = "0";
+         }
+         if (parseFloat
+                (document.UserInfo.Individual_Failure_Rate.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Individual Failure Rate !");
+            document.UserInfo.Individual_Failure_Rate.value = "0";
+         }
+         break;
+      } case 5: { // Solve for Total Time
+         if (parseFloat (document.UserInfo.Network_Reliability.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Network Reliability !");
+            document.UserInfo.Network_Reliability.value = "0";
+         }
+         if ((parseInt (document.UserInfo.Total_Components.value) <= 0) ||
+             (parseInt (document.UserInfo.Total_Components.value) > max_n)) {
+            valid = false;
+            alert (pleaseText + "Total Components !");
+            document.UserInfo.Total_Components.value = "0";
+         }
+         if ((parseInt (document.UserInfo.Working_Components.value) <= 0) ||
+             (parseInt (document.UserInfo.Working_Components.value) > max_n)) {
+            valid = false;
+            alert (pleaseText + "Working Components !");
+            document.UserInfo.Working_Components.value = "0";
+         }
+         if (parseFloat
+                (document.UserInfo.Individual_Failure_Rate.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Individual Failure Rate !");
+            document.UserInfo.Individual_Failure_Rate.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Components.value) <
+             parseInt (document.UserInfo.Working_Components.value)) {
+            valid = false;
+            alert
+               ("Total_Components must not be less than Working_Components");
+            document.UserInfo.Total_Components.value = "0";
+            document.UserInfo.Working_Components.value = "0";
+         }
+         break;
+      } case 6: { // Solve for Individual Failure Rate
+         if (parseFloat (document.UserInfo.Network_Reliability.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Network Reliability !");
+            document.UserInfo.Network_Reliability.value = "0";
+         }
+         if ((parseInt (document.UserInfo.Total_Components.value) <= 0) ||
+             (parseInt (document.UserInfo.Total_Components.value) > max_n)) {
+            valid = false;
+            alert (pleaseText + "Total Components !");
+            document.UserInfo.Total_Components.value = "0";
+         }
+         if ((parseInt (document.UserInfo.Working_Components.value) <= 0) ||
+             (parseInt (document.UserInfo.Working_Components.value) > max_n)) {
+            valid = false;
+            alert (pleaseText + "Working Components !");
+            document.UserInfo.Working_Components.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Time.value) <= 0) {
+            valid = false;
+            alert (pleaseText + "Total Time !");
+            document.UserInfo.Total_Time.value = "0";
+         }
+         if (parseInt (document.UserInfo.Total_Components.value) <
+             parseInt (document.UserInfo.Working_Components.value)) {
+            valid = false;
+            alert
+               ("Total_Components must not be less than Working_Components");
+            document.UserInfo.Total_Components.value = "0";
+            document.UserInfo.Working_Components.value = "0";
+         }
+         break;
+      } default: {
+	   alert ("document.UserInfo.Unknown.selectedIndex = " +
+                             document.UserInfo.Unknown.selectedIndex +
+                             ", hence no action taken in validate");
+         break;
+      }
+   }
+   return(valid);
+}
+
+////////////////////////////////////////////////////////////////////////////
+// clear_all takes input when the user clicks on the "reset" button.
+// This causes all form fields to become blank as if starting over.
+////////////////////////////////////////////////////////////////////////////
+
+function clear_all () {
+   document.UserInfo.Network_Reliability.value = "";
+   document.UserInfo.Total_Components.value = "";
+   document.UserInfo.Working_Components.value = "";
+   document.UserInfo.Total_Time.value = "";
+   document.UserInfo.Individual_Failure_Rate.value = "";
+   document.UserInfo.Unknown.selectedIndex = 0;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// getChoice takes input from the form when the user clicks in front
+// of "Solve for:" and selects one of the five choices (that is not
+// "SELECT ONE").  If a valid option was selected, its' value will be
+// stored for access by other functions.
+////////////////////////////////////////////////////////////////////////////
+
+function getChoice () {
+   switch (document.UserInfo.Unknown.selectedIndex) {
+      case 1: {
+      } case 2: {
+      } case 3: {
+      } case 4: {
+      } case 5: {
+      } case 6: {
+         document.UserInfo.Network_Reliability.value = 0.98;
+         document.UserInfo.Total_Components.value = 5;
+         document.UserInfo.Working_Components.value = 3;
+         document.UserInfo.Total_Time.value = 300;
+         document.UserInfo.Individual_Failure_Rate.value = 0.0005;
+         break;
+      } default: {
+         alert ("index = " + document.UserInfo.Unknown.selectedIndex +
+                ", hence all parameters will be reset");
+         clear_all ();
+      }
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////
+// n_choose_k takes n (Total Components) and m (Working Components)
+// and produces a result that is equivalent to the expression
+// (n!)/((m!)(n-m)!), but which will handle much larger numbers
+// and hence be less likely to result in overflow or underflow.
+////////////////////////////////////////////////////////////////////////////
+
+function n_choose_k (n, k) {
+   var result = 1.0;
+   for (var i=0; i<k; i++)
+      result *= (n - i) / (k - i);
+   return result;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// f_of_x takes input of n (Total Components), m (Working Components)
+// time (Total Time), and lambda (Individual Failure Rate), and computes
+// Network Reliability.
+////////////////////////////////////////////////////////////////////////////
+
+function f_of_x (n, m, time, lambda) {
+   var reliability = 0.0;
+   if (m > n) {
+      alert ("invalid n & m, n = " + n + ", m = " + m + ".");
+   }
+   else {
+      for (var k=m; k<=n; k++)
+         reliability += n_choose_k (n, k) *
+            Math.pow (1.0 - Math.exp (time * lambda * -1.0), n-k) *
+            Math.exp (lambda * -1.0 * time * k);
+      return reliability;
+   } return 0;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// f_p_of_x takes input of n (Total Components), m (Working Components)
+// time (Total Time), and lambda (Individual Failure Rate), and computes
+// the derivative of Network Reliability with respect to time.
+////////////////////////////////////////////////////////////////////////////
+
+function f_p_of_x (n, m, time, lambda) {
+   var reliability = 0;
+   var e_term_2;
+   var l_term = time * lambda * -1;
+   var e_term_1 = Math.exp (l_term);
+   for (var k=m; k<=n; k++) {
+      e_term_2 = Math.exp (l_term * k);
+      reliability += n_choose_k (n, k) *
+         ((Math.pow (1 - e_term_1, n-k) * -1 * lambda * k * e_term_2) +
+          (e_term_2 * lambda * e_term_1 * (k-n) *
+           Math.pow (1 - e_term_1, n-k-1)));
+   }
+   return reliability;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// solve_for_lambda takes input of target (Network Reliability), time
+// (Total Time), lambda (Individual Failure Rate), n (Total Components),
+// and m (Working Components) and computes (or solves for) Individual
+// Failure Rate based on the target Network Reliability, the initial
+// Individual Failure Rate and the other input parameters.
+//
+// (Note that the parameters in the call to f_p_of_x have time and lambda
+//  switched from what they are in solve_for_time.  This is because they
+//  appear together in the original reliability equation, so the second
+//  derivative function is the same as the one used for solve_for_time
+//  with these parameters switched).
+////////////////////////////////////////////////////////////////////////////
+
+function solve_for_lambda (target, time, lambda, n, m) {
+   var counter = 0;
+   var delta = new Array(2);
+   var den;
+   var done = 0;
+   var epsilon = new Array(2);
+   var num;
+   var x = new Array(2);
+   x[0] = lambda;
+   do {
+      num = f_of_x (n, m, time, lambda) - target;
+      den = f_p_of_x (n, m, lambda, time);
+      x[1] = x[0] - num / den;
+      delta[0] = x[0] - x[1];
+      delta[1] = f_of_x (n, m, time, x[1]) - target;
+      if ((Math.abs(delta[0]) > document.UserInfo.x_tolerance.value) ||
+          (0 > delta[1])                    ||
+          (delta[1] > document.UserInfo.f_tolerance.value)) {
+         x[0] = x[1];
+         lambda = x[0];
+      }
+      else
+         done = 1;
+      counter++;
+      if (counter > document.UserInfo.iterations_limit.value) {
+         done = 1;
+         alert ("lambda solver exceeded iterations_limit");
+      }
+   } while (!done)
+   return lambda;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// solve_for_time takes input of target (Network Reliability), time (Total
+// Time), lambda (Individual Failure Rate), n (Total Components), and m
+// (Working Components) and computes (or solves for) Total Time based on
+// the target Network Reliability, the initial Total Time and the other
+// input parameters.
+////////////////////////////////////////////////////////////////////////////
+
+function solve_for_time (target, time, lambda, n, m) {
+   var delta = new Array(2);
+   var den;
+   var done = 0;
+   var num;
+   var x = new Array(2);
+   var counter = 0;
+   x[0] = time;
+   do {
+      num = f_of_x (n, m, time, lambda) - target;
+      den = f_p_of_x (n, m, time, lambda);
+      x[1] = x[0] - num / den;
+      delta[0] = x[0] - x[1];
+      delta[1] = f_of_x (n, m, time, x[1]) - target;
+      if ((Math.abs(delta[0]) > document.UserInfo.x_tolerance.value) ||
+          (0 > delta[1])                    ||
+          (delta[1] > document.UserInfo.f_tolerance.value)) {
+         x[0] = x[1];
+         time = x[0];
+      }
+      else
+         done = 1;
+      counter++;
+      if (counter > document.UserInfo.iterations_limit.value) {
+         done = 1;
+         alert ("time solver exceeded iterations_limit");
+      }
+   } while (!done)
+   return time;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// solve_for_total_components takes input of target (Network Reliability),
+// time (Total Time), lambda (Individual Failure Rate), and m (Working
+// Components), iterating through valid values of n (Total Components) to
+// find the one that computes the smallest Network Reliability that is
+// between the target Network Reliability and unity.
+////////////////////////////////////////////////////////////////////////////
+
+function solve_for_total_components (target, time, lambda, m) {
+   var solution = new Array(2); // hold best n and reliability
+   solution[0] = 1;
+   for (var i=m; i<=max_n; i++) {
+      Network_Reliability = f_of_x (i, m, time, lambda);
+      if (Network_Reliability >= target) {
+         if (Network_Reliability < solution[0]) {
+            solution[0] = Network_Reliability;
+            solution[1] = i;
+         }
+      }
+   }
+   return solution[1];
+}
+
+////////////////////////////////////////////////////////////////////////////
+// solve_for_working_components takes input of target (Network Reliability),
+// time (Total Time), lambda (Individual Failure Rate), and n (Total
+// Components), iterating through valid values of m (Working Components) to
+// find the one that computes the smallest Network Reliability that is
+// between the target Network Reliability and unity.
+////////////////////////////////////////////////////////////////////////////
+
+function solve_for_working_components (target, time, lambda, n) {
+   var solution = new Array(2); // hold best m and reliability
+   solution[0] = 1;
+   for (var i=1; i<=n; i++) {
+      Network_Reliability = f_of_x (n, i, time, lambda);
+      if (Network_Reliability >= target) {
+         if (Network_Reliability < solution[0]) {
+            solution[0] = Network_Reliability;
+            solution[1] = i;
+         }
+      }
+   }
+   return solution[1];
+}
+
+////////////////////////////////////////////////////////////////////////////
+// solve_for_working_components takes input of target (Network Reliability),
+// time (Total Time), lambda (Individual Failure Rate), iterating through
+// valid values of n (Total Components) and m (Working Components) to
+// find the one that computes the smallest Network Reliability that is
+// between the target Network Reliability and unity.
+////////////////////////////////////////////////////////////////////////////
+
+function solve_for_n_m (target, time, lambda) {
+   var solution = new Array (3);
+   var Network_Reliability;
+   solution[0] = 1;
+   for (var i = 1; i <= max_n; i++) {
+      for (var j = i; j <= max_n; j++) {
+         Network_Reliability = f_of_x (j, i, time, lambda);
+         if ((Network_Reliability >= target) &&
+             (Network_Reliability < solution[0])) {
+            // alert ("i = " + i + ", j = " + j +
+            //        ", Network_Reliability = " + Network_Reliability);
+            solution[0] = Network_Reliability;
+            solution[1] = j;
+            solution[2] = i;
+         }
+      }
+   }
+   document.UserInfo.Total_Components.value = solution[1];
+   document.UserInfo.Working_Components.value = solution[2];
+}
+
+////////////////////////////////////////////////////////////////////////////
+// process_inputs is invoked when the Solve button is clicked.  The
+// Network Reliability, Total Time, or Individual Failure Rate will be
+// computed as a function of the value in each of those parameters as
+// well as the Total Components and Working Components.  If a required
+// parameter has an invalid value, a "not computable" message will be
+// displayed in the variable that was to be solved for.
+////////////////////////////////////////////////////////////////////////////
+
+function process_inputs () {
+   var lambda =
+       parseFloat (document.UserInfo.Individual_Failure_Rate.value);
+   var Network_Reliability =
+       parseFloat (document.UserInfo.Network_Reliability.value);
+   var n = parseInt(document.UserInfo.Total_Components.value);
+   var m = parseInt (document.UserInfo.Working_Components.value);
+   var time = parseInt (document.UserInfo.Total_Time.value);
+   if (document.UserInfo.f_tolerance < 0) {
+      alert ("function tolerance out of range, will be set to 0.000002");
+      document.UserInfo.f_tolerance.value = 0.000002;
+   }
+   if (document.UserInfo.x_tolerance < 0) {
+      alert ("x tolerance out of range, will be set to 0.0002");
+      document.UserInfo.x_tolerance.value = 0.0002;   }
+   if ((document.UserInfo.printing_precision.value <  1) ||
+       (document.UserInfo.printing_precision.value > 16)) {
+      alert ("printing precision out of range, will be set to 6");
+      document.UserInfo.printing_precision.value = 6
+   }
+   switch (document.UserInfo.Unknown.selectedIndex) {
+      case 1: {
+	  if (validate ()) {
+            Network_Reliability = f_of_x (n, m, time, lambda);
+            document.UserInfo.Network_Reliability.value =
+               Network_Reliability.toPrecision
+                  (document.UserInfo.printing_precision.value) + " (Computed)";
+         }
+         else {
+            document.UserInfo.Network_Reliability.value = "not computable";
+            document.UserInfo.Total_Components.value = parseInt
+               (document.UserInfo.Total_Components.value);
+            document.UserInfo.Working_Components.value = parseInt
+               (document.UserInfo.Working_Components.value);
+            document.UserInfo.Total_Time.value = parseInt
+               (document.UserInfo.Total_Time.value);
+            document.UserInfo.Individual_Failure_Rate.value = parseFloat
+               (document.UserInfo.Individual_Failure_Rate.value);
+         }
+         break;
+      } case 2: {
+         if (validate ()) {
+            n = solve_for_total_components
+               (Network_Reliability, time, lambda, m);
+            document.UserInfo.Total_Components.value = n + " (Computed)";
+            Network_Reliability = f_of_x (n, m, time, lambda);
+            document.UserInfo.Network_Reliability.value =
+               Network_Reliability.toPrecision
+                  (document.UserInfo.printing_precision.value) + " (Computed)";
+         }
+         else {
+            document.UserInfo.Total_Components.value = "not computable";
+            document.UserInfo.Network_Reliability.value = parseFloat
+               (document.UserInfo.Network_Reliability.value);
+            document.UserInfo.Working_Components.value = parseInt
+               (document.UserInfo.Working_Components.value);
+            document.UserInfo.Total_Time.value = parseInt
+               (document.UserInfo.Total_Time.value);
+            document.UserInfo.Individual_Failure_Rate.value = parseFloat
+               (document.UserInfo.Individual_Failure_Rate.value);
+         }
+         break;
+      } case 3: { // solve_for_working_components
+         if (validate ()) {
+            Network_Reliability = parseFloat (document.UserInfo.Network_Reliability.value);
+            m = solve_for_working_components
+               (Network_Reliability, time, lambda, n);
+            document.UserInfo.Working_Components.value = m + " (Computed)";
+            m = parseInt (document.UserInfo.Working_Components.value);
+            Network_Reliability = f_of_x (n, m, time, lambda);
+            document.UserInfo.Network_Reliability.value =
+               Network_Reliability.toPrecision
+                  (document.UserInfo.printing_precision.value) + " (Computed)";
+         }
+         else {
+            document.UserInfo.Working_Components.value = "not computable";
+            document.UserInfo.Network_Reliability.value = parseFloat
+               (document.UserInfo.Network_Reliability.value);
+            document.UserInfo.Total_Components.value = parseInt
+               (document.UserInfo.Total_Components.value);
+            document.UserInfo.Total_Time.value = parseInt
+               (document.UserInfo.Total_Time.value);
+            document.UserInfo.Individual_Failure_Rate.value = parseFloat
+               (document.UserInfo.Individual_Failure_Rate.value);
+         }
+         break;
+      } case 4: { // solve_for_n_m
+         if (validate ()) {
+            solve_for_n_m
+               (Network_Reliability, time, lambda);
+            n = parseInt (document.UserInfo.Total_Components.value);
+            document.UserInfo.Total_Components.value = n + " (Computed)";
+            m = parseInt (document.UserInfo.Working_Components.value);
+            document.UserInfo.Working_Components.value = m + " (Computed)";
+            Network_Reliability = f_of_x (n, m, time, lambda);
+            document.UserInfo.Network_Reliability.value =
+               Network_Reliability.toPrecision
+                  (document.UserInfo.printing_precision.value) + " (Computed)";
+         }
+         else {
+            document.UserInfo.Working_Components.value = "not computable";
+            document.UserInfo.Network_Reliability.value = parseFloat
+               (document.UserInfo.Network_Reliability.value);
+            document.UserInfo.Total_Components.value = parseInt
+               (document.UserInfo.Total_Components.value);
+            document.UserInfo.Total_Time.value = parseInt
+               (document.UserInfo.Total_Time.value);
+            document.UserInfo.Individual_Failure_Rate.value = parseFloat
+               (document.UserInfo.Individual_Failure_Rate.value);
+         }
+         break;
+
+      } case 5: {
+         if (validate ()) {
+            time = Math.floor (solve_for_time
+               (Network_Reliability, time, lambda, n, m));
+            Network_Reliability = f_of_x (n, m, time, lambda);
+            document.UserInfo.Total_Time.value =
+               time + " (Computed)";
+            document.UserInfo.Network_Reliability.value =
+               Network_Reliability.toPrecision
+                  (document.UserInfo.printing_precision.value) + " (Computed)";
+         }
+         else {
+            document.UserInfo.Total_Time.value = "not computable";
+            document.UserInfo.Network_Reliability.value = parseFloat
+               (document.UserInfo.Network_Reliability.value);
+            document.UserInfo.Total_Components.value = parseInt
+               (document.UserInfo.Total_Components.value);
+            document.UserInfo.Working_Components.value = parseInt
+               (document.UserInfo.Working_Components.value);
+            document.UserInfo.Individual_Failure_Rate.value = parseFloat
+               (document.UserInfo.Individual_Failure_Rate.value);
+         }
+         break;
+      } case 6: {
+         if (validate ()) {
+            lambda = solve_for_lambda
+               (Network_Reliability, time, lambda, n, m);
+            Network_Reliability = f_of_x (n, m, time, lambda);
+            document.UserInfo.Individual_Failure_Rate.value =
+               lambda.toPrecision(document.UserInfo.printing_precision.value) +
+               " (Computed)";
+            document.UserInfo.Network_Reliability.value =
+               Network_Reliability.toPrecision
+                  (document.UserInfo.printing_precision.value) + " (Computed)";
+         }
+	   else {
+	      document.UserInfo.Individual_Failure_Rate.value =
+               "not computable";
+            document.UserInfo.Network_Reliability.value = parseFloat
+               (document.UserInfo.Network_Reliability.value);
+            document.UserInfo.Total_Components.value = parseInt
+               (document.UserInfo.Total_Components.value);
+            document.UserInfo.Working_Components.value = parseInt
+               (document.UserInfo.Working_Components.value);
+            document.UserInfo.Total_Time.value = parseInt
+               (document.UserInfo.Total_Time.value);
+         }
+         break;
+      } default: {
+         alert ("index = " + document.UserInfo.Unknown.selectedIndex +
+                ", hence no action taken in process_inputs");
+         break;
+      }
+   }
+}
+
+<!-- done hiding from old browsers -->
+
+</SCRIPT></HEAD>
+<BODY text=#000000 vLink=#800080 aLink=#ff0000 link=#0000ff bgColor=#ffffff
+ onLoad=initialize();><H2><CENTER>Reliability Calculator</CENTER>
+<HR align=center width="95%"></H2><H3><FORM
+    name=UserInfo
+    method="post"
+    <BR><table BORDER=0 CELLSPACING=0 CELLPADDING=12 ALIGN=CENTER WIDTH="600">
+    <div align=left><tr>This network reliability calculation tool facilitates
+           exploration of tradeoffs among the following variables:</tr>
+    <tr><dl><dd><ul>
+    <li><b>The total number n of independent identical components in a
+           network</b>
+    <li><b>The minimum number m of these components which must remain
+           functional in order to avoid network failure</b>
+    <li><b>The length of time t for which the network must successfully
+           function</b>
+    <li><b>The individual component failure rate &lambda;</b>
+    <li><b>The network reliability R(n, m, t, &lambda;)</b>
+    </ul></dl></tr>
+    <tr><b>This tool is able to solve for any one of these five variables. The
+    user selects the variable of interest using the "Solve for" menu, while
+    specifying values for all other variables in their respective fields. All
+    four independent variables are required when solving for network reliability.
+    When solving for one of the independent variables, a target network
+    reliability is required.</b></tr></div></table><BR>
+    <TABLE width="600">
+      <TR>
+        <!-- Row 1 -->
+        <TD align=right><B>Solve for:</B></TD>
+        <TD><SELECT onchange=getChoice() name=Unknown>
+          <OPTION>SELECT ONE
+          <OPTION>Network Reliability
+          <OPTION>Total Components
+          <OPTION>Working Components
+          <OPTION>Total & Working Components
+          <OPTION>Total Time
+          <OPTION>Individual Failure Rate
+          </OPTION></SELECT>
+        </TD>
+        <td><INPUT type="button" value="Solve" onClick="process_inputs()"></td>
+      </TR>
+      <TR>
+        <!-- Row 2 -->
+        <TD align=right><B>Network Reliability:</B></TD>
+        <TD><INPUT size=20 name=Network_Reliability></TD>
+        <td><INPUT type="button" value="Reset" onClick="clear_all()"></td>
+      </TR>
+      <TR>
+        <!-- Row 3 -->
+        <TD align=right><B>Total Components:</B></TD>
+        <TD><INPUT size=20 name=Total_Components></TD>
+        <td><INPUT type=hidden size=6 name=printing_precision></td>
+      </TR>
+      <TR>
+        <!-- Row 4 -->
+        <TD align=right><B>Working Components:</B></TD>
+        <TD><INPUT size=20 name=Working_Components></TD>
+        <td><input type=hidden name=iterations_limit></td>
+      </TR>
+      <TR>
+        <!-- Row 5 -->
+        <TD align=right><B>Total Time (hrs):</B></TD>
+        <TD><INPUT size=20 name=Total_Time></TD>
+        <td><input type=hidden name=f_tolerance></td>
+      </TR>
+      <TR>
+        <!-- Row 6 -->
+        <TD align=right><B>Individual Failure Rate (1/hrs):</B></TD>
+        <TD><INPUT size=20 name=Individual_Failure_Rate></TD>
+        <td><input type=hidden name=x_tolerance></td>
+      </TR>
+      <tr>
+        <td align="right"><B>Questions or Comments:</B></td>
+        <td><a href="mailto:HeathRLIII@gmail.com">HeathRLIII@gmail.com</a></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td align="left">720-297-9627</td>
+      </tr>
+    </TABLE>
+  </FORM>
+</H3></BODY></HTML>
